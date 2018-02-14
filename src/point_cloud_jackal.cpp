@@ -23,22 +23,27 @@
 class PointCloudProc
 {
   public:
-    PointCloudProc()
+    PointCloudProc() : cloud_transformed_(new pcl::PointCloud<pcl::PointXYZ>),
+                       cloud_hull(new pcl::PointCloud<pcl::PointXYZ>), cloud_raw_(new pcl::PointCloud<pcl::PointXYZ>)
     {
         planar_segment_src_ = nh_.advertiseService("planer_segment", &PointCloudProc::planarSegmentationCB, this);
-        pc_sub_ = nh_.subscribe("/kinect2/hd/points", 1000, &PointCloudProc::pointcloudcb, this);
-        fixed_frame_ = "/map";
+        pc_sub_ = nh_.subscribe("/kinect2/qhd/points", 1, &PointCloudProc::pointcloudcb, this);
+        point_cloud_pub_ = nh_.advertise<pcl::PointCloud<pcl::PointXYZ>>("segmented_plane_point_cloud", 1000);
+        fixed_frame_ = "/base_link";
+        //listener_ = new tf::TransformListener();
     }
 
     void pointcloudcb(const pcl::PointCloud<pcl::PointXYZ>::Ptr &msg)
     {
         cloud_raw_ = msg;
         cloud_transformed_ = cloud_raw_;
+        //listener_->waitForTransform(fixed_frame_, (*msg).header.frame_id, (*msg).header.stamp , ros::Duration(5.0));
     }
 
-    bool transformPointCloud() {
-      bool transform_success = pcl_ros::transformPointCloud(fixed_frame_, *cloud_raw_, *cloud_transformed_, listener_);
-      return transform_success;
+    bool transformPointCloud()
+    {
+        bool transform_success = pcl_ros::transformPointCloud(fixed_frame_, *cloud_raw_, *cloud_transformed_, listener_);
+        return transform_success;
     }
 
     bool planarSegmentation(bool create_srv_res)
@@ -46,7 +51,6 @@ class PointCloudProc
         pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_plane(new pcl::PointCloud<pcl::PointXYZ>);
         pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
         pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
-
         Eigen::Vector3f axis = Eigen::Vector3f(0.0, 0.0, 1.0); //z axis
         // Create the segmentation object
         pcl::SACSegmentation<pcl::PointXYZ> seg;
@@ -54,6 +58,7 @@ class PointCloudProc
         seg.setOptimizeCoefficients(true);
         // Mandatory set plane to be parallel to Z axis within a 15 degrees tolerance
         seg.setModelType(pcl::SACMODEL_PARALLEL_PLANE);
+        seg.setMaxIterations(500);   // iteration limits decides segmentation goodness
         seg.setMethodType(pcl::SAC_RANSAC);
         seg.setAxis(axis);
         seg.setEpsAngle(pcl::deg2rad(15.0f));
@@ -73,6 +78,9 @@ class PointCloudProc
         extract_.setIndices(inliers);
         extract_.filter(*cloud_plane);
         ROS_INFO_STREAM("# of points in plane: " << cloud_plane->points.size());
+
+        // publish segmented point cloud
+        point_cloud_pub_.publish(cloud_plane);
 
         // Create a Convex Hull representation of the plane
         chull.setInputCloud(cloud_plane);
@@ -123,12 +131,12 @@ class PointCloudProc
             plane_object_msg.coef[3] = coefficients->values[3];
 
             // Get plane normal
-            float length = sqrt (coefficients->values[0] * coefficients->values[0]+
-                                 coefficients->values[1] * coefficients->values[1]+
-                                 coefficients->values[2] * coefficients->values[2]);
-            plane_object_msg.normal[0] = coefficients->values[0]/length;
-            plane_object_msg.normal[1] = coefficients->values[1]/length;
-            plane_object_msg.normal[2] = coefficients->values[2]/length;
+            float length = sqrt(coefficients->values[0] * coefficients->values[0] +
+                                coefficients->values[1] * coefficients->values[1] +
+                                coefficients->values[2] * coefficients->values[2]);
+            plane_object_msg.normal[0] = coefficients->values[0] / length;
+            plane_object_msg.normal[1] = coefficients->values[1] / length;
+            plane_object_msg.normal[2] = coefficients->values[2] / length;
 
             plane_object_msg.size.data = cloud_plane->points.size();
             plane_object_msg.is_vertical = true;
@@ -141,12 +149,15 @@ class PointCloudProc
     bool planarSegmentationCB(point_cloud_jackal::PlanarSegmentation::Request &req,
                               point_cloud_jackal::PlanarSegmentation::Response &res)
     {
-        // if (!this->transformPointCloud){
-        //     ROS_INFO ("failed transform point cloud");
-        //     res.success = false;
-        //     return true;
-        // }
-
+        ROS_INFO("stage 0");
+        if (!this->transformPointCloud())
+        {
+            ROS_INFO("failed transform point cloud");
+            res.success = false;
+            return true;
+        }
+        
+        ROS_INFO("stage 1");
         if (this->planarSegmentation(true))
         {
             res.success = true;
@@ -164,6 +175,7 @@ class PointCloudProc
     ros::NodeHandle nh_;
     ros::Subscriber pc_sub_;
     ros::Publisher plane_pub_;
+    ros::Publisher point_cloud_pub_;
     ros::ServiceServer planar_segment_src_;
 
     tf::TransformListener listener_;
@@ -182,6 +194,7 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "point_cloud_jackal");
 
     PointCloudProc pc_tools;
+    ROS_INFO("service initialized");
     ros::spin();
 
     return 0;

@@ -1,3 +1,4 @@
+geometry_msgs/Point center
 ---
 bool success
 point_cloud_jackal/Plane plane_object
