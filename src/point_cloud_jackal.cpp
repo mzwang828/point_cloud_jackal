@@ -18,8 +18,8 @@
 
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
-#include <point_cloud_jackal/PlanarSegmentation.h>
-#include <point_cloud_jackal/Plane.h>
+#include "point_cloud_jackal/PlanarSegmentation.h"
+#include "point_cloud_jackal/Plane.h"
 
 class PointCloudProc
 {
@@ -178,7 +178,6 @@ class PointCloudProc
     bool planarSegmentationCB(point_cloud_jackal::PlanarSegmentation::Request &req,
                               point_cloud_jackal::PlanarSegmentation::Response &res)
     {
-        ROS_INFO("stage 0");
         if (!this->transformPointCloud())
         {
             ROS_INFO("failed transform point cloud");
@@ -193,7 +192,6 @@ class PointCloudProc
             return true;
         }
 
-        ROS_INFO("stage 1");
         if (this->planarSegmentation(true))
         {
             res.success = true;
