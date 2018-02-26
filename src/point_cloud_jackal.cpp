@@ -32,19 +32,20 @@ class PointCloudProc
         planar_segment_src_ = nh_.advertiseService("planer_segment", &PointCloudProc::planarSegmentationCB, this);
         pc_sub_ = nh_.subscribe("/kinect2/qhd/points", 1, &PointCloudProc::pointcloudcb, this);
         point_cloud_pub_ = nh_.advertise<pcl::PointCloud<pcl::PointXYZ>>("segmented_plane_point_cloud", 1000);
-        fixed_frame_ = "/base_link";
-        //listener_ = new tf::TransformListener();
+        fixed_frame_ = "/map";
     }
 
     void pointcloudcb(const pcl::PointCloud<pcl::PointXYZ>::Ptr &msg)
     {
         cloud_raw_ = msg;
         cloud_transformed_ = cloud_raw_;
-        //listener_->waitForTransform(fixed_frame_, (*msg).header.frame_id, (*msg).header.stamp , ros::Duration(5.0));
+        // listener_.waitForTransform(fixed_frame_, "/kinect2_rgb_optical_frame", (ros::Time)(*cloud_raw_).header.stamp, ros::Duration(3.0));
+        // bool transform_success = pcl_ros::transformPointCloud(fixed_frame_, *cloud_raw_, *cloud_transformed_, listener_);
     }
 
     bool transformPointCloud()
     {
+        // listener_.waitForTransform(fixed_frame_, "/kinect2_rgb_optical_frame", (ros::Time)(*cloud_raw_).header.stamp, ros::Duration(3.0));
         bool transform_success = pcl_ros::transformPointCloud(fixed_frame_, *cloud_raw_, *cloud_transformed_, listener_);
         return transform_success;
     }
@@ -212,10 +213,11 @@ class PointCloudProc
     ros::Publisher point_cloud_pub_;
     ros::ServiceServer planar_segment_src_;
 
-    tf::TransformListener listener_;
     std::string fixed_frame_;
 
     point_cloud_jackal::Plane plane_object_;
+
+    tf::TransformListener listener_;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_raw_, cloud_transformed_, cloud_filtered_;
     pcl::ExtractIndices<pcl::PointXYZ> extract_;
