@@ -18,6 +18,8 @@
 
 #include <ros/ros.h>
 #include <tf/transform_listener.h>
+#include "tf/message_filter.h"
+#include "message_filters/subscriber.h"
 #include "point_cloud_jackal/PlanarSegmentation.h"
 #include "point_cloud_jackal/Plane.h"
 
@@ -27,31 +29,43 @@ class PointCloudProc
     PointCloudProc() : cloud_transformed_(new pcl::PointCloud<pcl::PointXYZ>), cloud_filtered_(new pcl::PointCloud<pcl::PointXYZ>),
                        cloud_hull(new pcl::PointCloud<pcl::PointXYZ>), cloud_raw_(new pcl::PointCloud<pcl::PointXYZ>)
     {
-        filter_range_ = 1.0;
+        filter_range_ = 2;
 
         planar_segment_src_ = nh_.advertiseService("planer_segment", &PointCloudProc::planarSegmentationCB, this);
-        pc_sub_ = nh_.subscribe("/kinect2/qhd/points", 1, &PointCloudProc::pointcloudcb, this);
+        pc_sub_ = nh_.subscribe("/kinect2/qhd/points", 50, &PointCloudProc::pointcloudcb, this);
         point_cloud_pub_ = nh_.advertise<pcl::PointCloud<pcl::PointXYZ>>("segmented_plane_point_cloud", 1000);
         fixed_frame_ = "/map";
+        //f_point_sub_.subscribe(nh_, "/kinect2/qhd/points", 10);
+        //tf_filter_ = new tf::MessageFilter<pcl::PointCloud<pcl::PointXYZ>>(pc_sub_, listener_, fixed_frame_, 10);
+        //tf_filter_->registerCallback(boost::bind(&PointCloudProc::pointcloudcb, this, _1));
     }
 
-    void pointcloudcb(const pcl::PointCloud<pcl::PointXYZ>::Ptr &msg)
+     void pointcloudcb(const pcl::PointCloud<pcl::PointXYZ>::Ptr &msg)
+    {
+        cloud_raw_ = msg;
+        listener_.waitForTransform(fixed_frame_, "/kinect2_rgb_optical_frame", ros::Time(0), ros::Duration(10.0));
+        bool transform_success = pcl_ros::transformPointCloud(fixed_frame_, *cloud_raw_, *cloud_transformed_, listener_);
+        ROS_INFO("size %f", cloud_transformed_->points.size());
+    }
+
+/*     void pointcloudcb(const boost::shared_ptr<const pcl::PointCloud<pcl::PointXYZ>> &msg)
     {
         cloud_raw_ = msg;
         cloud_transformed_ = cloud_raw_;
-        // listener_.waitForTransform(fixed_frame_, "/kinect2_rgb_optical_frame", (ros::Time)(*cloud_raw_).header.stamp, ros::Duration(3.0));
-        // bool transform_success = pcl_ros::transformPointCloud(fixed_frame_, *cloud_raw_, *cloud_transformed_, listener_);
-    }
+        listener_.waitForTransform(fixed_frame_, "/kinect2_rgb_optical_frame", (ros::Time)(*cloud_raw_).header.stamp, ros::Duration(3.0));
+        bool transform_success = pcl_ros::transformPointCloud(fixed_frame_, *cloud_raw_, *cloud_transformed_, listener_);
+    } */
 
     bool transformPointCloud()
     {
-        // listener_.waitForTransform(fixed_frame_, "/kinect2_rgb_optical_frame", (ros::Time)(*cloud_raw_).header.stamp, ros::Duration(3.0));
+        listener_.waitForTransform(fixed_frame_, "/kinect2_rgb_optical_frame", (ros::Time)(*cloud_raw_).header.stamp, ros::Duration(3.0));
         bool transform_success = pcl_ros::transformPointCloud(fixed_frame_, *cloud_raw_, *cloud_transformed_, listener_);
         return transform_success;
     }
 
     bool filterPointCloud(geometry_msgs::Point center)
     {
+        ROS_INFO("center %f, %f, %f", center.x, center.y, center.z);
         pcl::PassThrough<pcl::PointXYZ> pass;
         pass.setInputCloud(cloud_transformed_);
         pass.setFilterFieldName("x");
@@ -179,12 +193,12 @@ class PointCloudProc
     bool planarSegmentationCB(point_cloud_jackal::PlanarSegmentation::Request &req,
                               point_cloud_jackal::PlanarSegmentation::Response &res)
     {
-        if (!this->transformPointCloud())
-        {
-            ROS_INFO("failed transform point cloud");
-            res.success = false;
-            return true;
-        }
+        // if (!this->transformPointCloud())
+        // {
+        //     ROS_INFO("failed transform point cloud");
+        //     res.success = false;
+        //     return true;
+        // }
 
         if (!this->filterPointCloud(req.center))
         {
@@ -218,6 +232,8 @@ class PointCloudProc
     point_cloud_jackal::Plane plane_object_;
 
     tf::TransformListener listener_;
+    // tf::MessageFilter<pcl::PointCloud<pcl::PointXYZ>> *tf_filter_;
+    // message_filters::Subscriber<pcl::PointCloud<pcl::PointXYZ>> f_point_sub_;
 
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_raw_, cloud_transformed_, cloud_filtered_;
     pcl::ExtractIndices<pcl::PointXYZ> extract_;
